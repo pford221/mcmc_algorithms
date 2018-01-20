@@ -1012,7 +1012,7 @@ chains <- mapply(metropolis_algorithm, samples = samples, theta_seed = theta_see
                  ,sd = sd)
 ```
 
-We plot the first 150 samples for each of the three chains below in Figure 11. Notice that these chains mix extremely fast. By about sample 25, they seem to have concentrated around the mode of the posterior distribution and are stationary. In this case we could safely set the warmup period to be about 100 iterations. In realistic applications, warmup periods are typically a couple hundred to a couple thousand iterations depending on the complexity of the model and the data that the model is trying to represent.
+We plot the first 150 samples for each of the three chains below in Figure 11. Notice that these chains mix extremely fast. By about sample 25, they seem to have concentrated around the mode of the posterior distribution and are stationary. In this case we could safely set the warmup period to be about 100 samples. In realistic applications, warmup periods are typically a couple hundred to a couple thousand samples depending on the complexity of the model and the data that the model is trying to represent.
 
 ```{r fig11, echo=F, fig.height = 3.75, fig.cap = 'Trace plots: First 150 samples from three chains'}
 opar <- par()
@@ -1070,7 +1070,7 @@ legend('topright', c('chain_1', 'chain_2', 'chain_3'), col=line_cols, lwd=rep(2,
        ,cex = cex)
 ```
 
-If any of the chains appeared to be isolated from the others then we would be nervous that the chains are not mixing well and have not converged on the posterior distribution. In that case, we could try to run more iterations or we might check our model definition, implementation method, or input data for potential issues.
+If any of the chains appeared to be isolated from the others then we would be nervous that the chains are not mixing well and have not converged on the posterior distribution. In that case, we could try to run more samples or we might check our model definition, implementation method, or input data for potential issues.
 
 **Autocorrelation Plots** - We know our within-chain samples are correlated since not all the $\pp$'s are accepted, and even if they are accepted, their value is a function of the last parameter value because $\pc$ is the mean of the proposal distribution in the Metropolis algorithm. Even in HMC where the proposal distribution molds itself to the posterior distribution, the current parameter value will influence the proposal distribution for the next parameter. To get a sense of how correlated the proposed parameters are through the sampling iterations, we can plot the *autocorrelation* of our chains. This diagnostic won't necessarily give us an indication of if the chain is representative of the posterior distribution, but it will give us a sense of the efficiency of our MCMC algorithm. It will also be useful to check to see if all of our chains are behaving similarly. If any chain's autocorrelation plot is significantly different than the others this is a hint that something has gone wrong. The correlogram computed via the `acf` function in `R` provides this diagnostic. Let's run it on our three chains and store the results.
 
