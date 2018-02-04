@@ -3,5 +3,4 @@
 .RData
 .Ruserdata
 mcmc_algorithms.pdf
-preamble.tex
 *.Rproj

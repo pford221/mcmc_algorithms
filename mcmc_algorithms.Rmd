@@ -1,7 +1,7 @@
 ---
 title: "MCMC Algorithms"
 author: "Patrick Ford, FCAS CSPA"
-date: "`r format(Sys.time(), '%B %Y')`"
+date: '`r format(Sys.Date(), "%B %Y")`'
 output:
   pdf_document:
     fig_caption: yes
@@ -174,11 +174,11 @@ thetas <- seq(from = 0.01, to = 1, by = 0.01)
 exact_posterior <- dbeta(thetas, (a + heads), (b + flips - heads))
 
 opar <- par()
-par(mar=c(2.5,3.5,3,2.1), mgp = c(1.75, 1, 0))
+par(mar=c(2.5,3.5,3,2.1), mgp = c(1.7, 1, 0))
 
 d <- density(posterior_thetas)
 plot( d
-     ,main = expression(paste('Kernel Density plot for ', theta))
+     ,main = expression(paste('Kernel Density Plot for ', theta))
      ,xlab = expression(theta)
      ,ylab = 'density'
      ,yaxt = 'n'
