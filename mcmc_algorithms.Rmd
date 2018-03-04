@@ -1,12 +1,14 @@
 ---
 title: "MCMC Algorithms"
 author: "Patrick Ford, FCAS CSPA"
-date: '`r format(Sys.Date(), "%B %Y")`'
+#date: '`r format(Sys.Date(), "%B %Y")`'
+date: "February 2018"
 output:
   pdf_document:
     fig_caption: yes
     includes:
       in_header: preamble.tex
+    number_sections: true
   html_document:
     df_print: paged
   word_document: default
@@ -26,38 +28,38 @@ library(scales)
 \newcommand{\pp}{\p_{prop}}
 \newcommand{\pc}{\p_{curr}}
 \newcommand{\sig}{\sigma^2}
-#### Introduction
+# Introduction
 Applying Bayesian models became practical with the development of Markov Chain Monte Carlo (MCMC) methods combined with the advent of increased computing power beginning in the 1990's.  There are different ways to implement MCMC. This study note will cover three popular MCMC algorithms that estimate the posterior distributions of parameters in a Bayesian MCMC model:
 
 * Metropolis
 * Gibbs
 * Hamiltonian
 
-The study note aims to provide simplified algorithm implementations that illustrate what happens in the background when one of them in invoked. In doing so, the study note intends to illuminate the algorithmic machinery in hopes of providing a level of insight that could not be attained by studying theory alone. In fact, we eschew almost all of the theory in favor of application in this study note. We employ `R` software as a medium to explore the algorithms and diagnostics common to MCMC implementations. All of the programs can be executed with base `R` functionality which means that there is no set-up overhead required to run the code blocks other than a working version of `R`. `R` is freely available online for all common operating systems. 
+The study note aims to provide simplified algorithm implementations that illustrate what happens in the background when one of them is invoked. In doing so, the study note intends to illuminate the algorithmic machinery in hopes of providing a level of insight that could not be attained by studying theory alone. In fact, we eschew almost all of the theory in favor of application in this study note. We employ `R` software as a medium to explore the algorithms and diagnostics common to MCMC implementations. All of the programs can be executed with base `R` functionality which means that there is no set-up overhead required to run the code blocks other than a working version of `R`. `R` is freely available online for all common operating systems. 
 
 This study note supplements the syllabus readings found in the book *Statistical Rethinking*^[McElreath, R., *Statistical Rethinking: A Bayesian Course with Examples in R and Stan*, CRC Press, 2016] by Richard McElreath. However, this study note can be read and understood even if the reader is not familiar with *Statistical Rethinking*. It is only in the next two sections where we highlight the shortcomings of alternatives to MCMC and extend the example of King Markov that the connection to the book is made explicit.
 
-#### Beyond Grid and Quadratic Approximation
+# Beyond Grid and Quadratic Approximation
 Recall that the main shortcoming of grid approximation as a technique to compute the posterior distributions of a vector of parameters is that it scales very poorly in high dimensions. Suppose, for example, that our model has 7 continuous parameters and in order to feel confident that we represent their posterior distributions precisely enough, we create a finite grid of 1,000 equally-spaced values to represent potential realizations at those values for each of the 7 parameters. This means we would need to comb over $1e^{21}$ possible parameter combinations in order to approximate the posterior. Obviously that is too many computations for most computers to finish in a reasonable amount of time, if at all. We see that grid approximation does not scale well with the number of parameters and thus is not tractable for most problems.
 
 We might also remember that the method of quadratic approximation computationally scales better than grid approximation, but it too can struggle in the face of complex, hierarchical models. It also does not fare well in the presence of posterior distributions that cannot be well approximated by a Gaussian distribution. Scale parameters, especially those with a lot of posterior density near a boundary, such as a small variance parameter that is close to zero, tend to not be served well by quadratic approximation. 
 
 Given the shortcomings of grid and quadratic approximation, we turn to MCMC sampling algorithms. The overarching idea of MCMC is that if we design a carefully-considered sampling strategy, we can feel confident that the sample distribution is representative enough of the true target posterior distribution to make statistical inferences. This idea is not too conceptually different than a political or social scientist sending out a survey or poll to a representative sample of respondents to estimate a population response. MCMC sampling algorithms don't draw from the posterior distribution directly similar to how a survey might be designed to not ask the question(s) of most immediate interest but rather ask related questions that are more easily answered. Instead MCMC algorithms request simpler responses of the data - through the model - such that when all the simpler responses are combined, we often arrive at the answer of true interest - the posterior distribution. We will try to keep this idea in mind as we work through the MCMC sampling strategies in the remainder of the study note.
 
-#### Revisiting King Markov's Islands
+# Revisiting King Markov's Islands
 *Statistical Rethinking* uses the analogy of the benevolent King Markov to introduce the first MCMC algorithm - the **Metropolis algorithm**. Recall the main tenets of this example: 
 
 * The islands represent candidate parameters.
-* The islands' relative populations represent the true posterior probabilities of the islands, which as we remember, is not known fully known by King Markov at any one time.
-* The time spent on the islands represents samples taken from the posterior of the islands.
+* The islands' relative populations represent the true posterior probabilities of the islands which, as we might remember, is not known fully known by King Markov at any one time.
+* The time spent on each island represents samples taken from the posterior of the islands.
 
-To further generalize this heuristic, conceptualize a string of tiny islands that are linked together such that King Markov can move to any island from any other island. To decide which tiny island to visit next, which we denote as $\pp$, King Markov will need a more general **proposal distribution**  than only being able to move to adjacent islands. Such a proposal distribution should give him the potential to visit any island from any other island. The Metropolis algorithm calls for this proposal distribution to be a normal distribution centered at the current parameter value, $\pc$, and a user-specified variance, $\sig$. In mathematical notation: 
+To further generalize this heuristic, conceptualize a string of tiny islands that are linked together such that King Markov can move to any island from any other island. In order to be able to visit any island from any other island, King Markov will need a more general **proposal distribution** than one that only allows movements to adjacent islands. Let us denote the candidate island $\pp$. The Metropolis algorithm calls for $\pp$ to be sampled from a normal proposal distribution centered at the current parameter value, $\pc$, with user-specified variance, $\sig$.
 
 $$\pp \sim Normal(\pc, \sig)$$
 
-The proposal distribution is a separate and distinct distribution from either the prior or posterior distribution for the parameter. The proposal distribution's sole purpose is to give candidate parameter values to *try* and potentially accept as a valid sample from the posterior distribution of $\p$.
+The proposal distribution is separate and distinct from either the prior or posterior distribution for the parameter. The proposal distribution's sole purpose is to give candidate parameter values to *try* and potentially accept as a valid sample from the posterior distribution of $\p$.
 
-By *try* in the preceding paragraph we technically mean "insert the proposed parameter value, $\pp$, into the numerator of Bayes' formula and compare the value of the numerator in that formula to the value of the numerator for the current parameter value, $\pc$." After this computational step of calculating numerators, we put some simple logic around whether to accept or reject $\pp$. Instead of comparing seashells and stones like King Markov, our logic will be to automatically accept if the numerator evaluated at $\pp$ is greater than the numerator evaluated at $\pc$ and *probabilistically* accept if the numerator of Bayes' formula at $\pp$ is less than the numerator of Bayes' formula at $\pc$. In less words:
+By *try* in the preceding paragraph we technically mean "insert the proposed parameter value, $\pp$, into the numerator of Bayes' formula and compare the value of the numerator in that formula to the value of the numerator for the current parameter value, $\pc$." After this computational step of calculating numerators, we put some simple logic around whether to accept or reject $\pp$. Instead of comparing seashells and stones like King Markov, our logic will be to automatically accept if the numerator of Bayes' formula evaluated at $\pp$ is greater than the numerator of Bayes' formula evaluated at $\pc$ and *probabilistically* accept if the numerator at $\pp$ is less than the numerator at $\pc$. In less words:
 
 $$p(accept\ \pp) = min(\frac{Bayes'\ numerator\ at\ \pp}{Bayes'\ numerator\ at\ \pc},\ 1.0)$$
 
@@ -65,7 +67,7 @@ And Bayes' numerator is simply the product of the likelihood, $l(Data|\p)$, and 
 
 $$p(accept\ \pp) = min(\frac{\bayesNum{prop}}{\bayesNum{curr}},\ 1.0)$$
 
-#### Metropolis Algorithm 
+# Metropolis Algorithm 
 In practice, how do we actually figure out when to accept $\pp$? We always accept if $\frac{\bayesNum{prop}}{\bayesNum{curr}}$ is greater than or equal to 1.0, and, if not, we sample from a uniform random variable, $r \sim U(0,1)$, and accept when $r$  is less than $p(accept\ \pp)$. Notice a couple of things about this algorithm:
 
 * By taking the ratio of the numerator of Bayes' formula at the proposed and current parameter values, we have circumvented having to compute the difficult denominator in Bayes' formula (typically referred to as the evidence or average likelihood).
@@ -91,7 +93,7 @@ $$Data \sim Binom(n=41, p=\p)$$
 
 $$p(\p) \sim \beta(a = 2,b = 2)$$
 
-* The prior distribution we choose is non-informative relative to the 41 observed flips. Selecting that prior is tantamount to claiming "in the past I've observed 4 coin flips for this coin, and 2 of the four came up heads". But we now have 41 real-life flips and only 13 were heads so the observed data should overwhelm our weak prior.
+* The prior distribution we choose carries less information than the the 41 observed flips. Selecting such a prior is tantamount to claiming "in the past I've observed 4 coin flips for this coin, and 2 of the four came up heads". But we now have 41 real-life flips and only 13 were heads so the observed data should overwhelm our weak prior.
 * Our proposal distribution for the Metropolis algorithm will be $Normal(\pc, 0.05^2)$.
 * $\p$ represents a probability and so its values are bounded between 0 and 1. Therefore, we must reject any samples from the proposal distribution that fall outside of this range.This can occur because the proposal distribution is normal and thus defined for all values on the real number line.
 
@@ -102,7 +104,7 @@ flips <- 41; heads <- 13
 a <- 2; b <- 2
 ```
 
-Then we create a function called `metropolis_algorithm` that takes three arguments. `samples` is the number of samples we want to draw from the posterior distribution and determines the length of the resulting MCMC chain. `theta_seed` gives us a $\p$ to start the algorithm, and `sd` is the standard deviation of the proposal distribution. Within the function we construct a `for` loop that repeatedly draws $\pp$ from the standard normal proposal distribution (`rnorm`) and then computes the ratio of Bayes' numerators and finally carries out the accept/reject logic. We store the results in an `R` vector called `posterior_thetas` which we initialize to be `NAs` before we start the loop. To aid in comprehension, many of the code statements in this study note are annotated with comments. Comments begin with `#` and are either placed above or, if space allows, next to the statements they describe.
+Then we create a function called `metropolis_algorithm` that takes three arguments. `samples` is the number of samples we want to draw from the posterior distribution and determines the length of the resulting MCMC chain. `theta_seed` gives us a $\p$ to start the algorithm, and `sd` is the standard deviation of the proposal distribution. Within the function we construct a `for` loop that repeatedly draws $\pp$ from the standard normal proposal distribution (using the `rnorm()` function) and then computes the ratio of Bayes' numerators and finally carries out the accept/reject logic. We store the results in an `R` vector called `posterior_thetas` which we initialize to be `NAs` before we start the loop. To aid in comprehension, many of the code statements in this study note are annotated with comments. Comments begin with `#` and are either placed above or, if space allows, next to the statements they describe.
 
 ```{r 1D_metropolis}
 metropolis_algorithm <- function(samples, theta_seed, sd){
@@ -252,7 +254,7 @@ In Figure 3, the posterior distribution's mode is between the prior distribution
 
 Before moving on it's worth going back to our proposal distribution and discussing the decision to set $\sigma = 0.05$. This was a decision we casually made, but this parameter is important for the efficiency of our algorithm. Setting $\sigma$ too low means that it will take many samples to map out the high and low density regions of the posterior. Setting it too high means that many samples are wasted as the $\pp$'s bounce around from high to low density areas of the posterior with most being rejected. To most easily see this, let's plot the first 100 samples from the posterior under three scenarios: (1) a small  $\sigma$ of $0.005$, (2) our original $\sigma$ of $0.05$, and (3) a large $\sigma$ of $0.5$.
 
-```{r fig4, echo=F, fig.width=10, fig.height=3.5, fig.cap = 'First 100 samples with three different proposal distributions. Inspired by Figure 7.4 in Kruschke, J.K. (2015). \\textit{Doing Bayesian Data Analysis in R: A Tutorial with R, JAGS, and Stan}. 2nd Edition. Academic Press/Elsiver.'}
+```{r fig4, echo=F, fig.width=5.5, fig.height=5, fig.cap = 'First 100 samples with three different proposal distributions. Red line represents the seeded parameter value and the green line represents the mode of the mode of the posterior. Inspired by Figure 7.4 in Kruschke, J.K. (2015). \\textit{Doing Bayesian Data Analysis in R: A Tutorial with R, JAGS, and Stan}. 2nd Edition. Academic Press/Elsiver.'}
 n <- 100
 set.seed(5)
 posterior_thetas_lo <- metropolis_algorithm(samples = n, theta_seed = 0.9, sd=0.005)
@@ -263,7 +265,7 @@ samples <- 1:n
 opar <- par()
 cex <- 1.6 #size of points on plot
 cex.main <- 1.5 #size of title
-cex.lab <- 2.0 #size of labels
+cex.lab <- 1.5 #size of labels
 cex.axis <- 1.0 #size of axis values
 pch <- 20 #point type
 point_col <- 'dodgerblue1' #point color
@@ -273,33 +275,38 @@ lty <- 'solid' #type of line
 lwd <- 0.7 #line width for plotted lines
 line = 1 #move up (positive) or down (negative) the title relative to the top of the plot
 alph = 0.6 #transparency of points/lines. make sure `scales` library is loaded
+line = 1 #move up (positive) or down (negative) the title relative to the top of the plot
 
-par( mfrow=c(1,3) #rows x columns
-     ,mgp=c(2.5,1,0) #location of labels, tick-mark labels, and tick marks relative to plot window
+par( mfrow=c(3,1) #rows x columns
+     ,mgp=c(2,1,0) #location of labels, tick-mark labels, and tick marks relative to plot window
      ,las = 0 #orientation of tick mark labels. 0 = parallel, 1 = horizontal, 2 = perpendicular, 3 = vertical 
-     ,mar=c(4,4,3,1)+0.1 #margins. goes bottom, left, top, right
+     ,mar=c(1.5,3,2,1)+0.1 #margins. goes bottom, left, top, right
 )
 
-plot(posterior_thetas_lo, samples, xlim=c(0,1), pch=pch, cex=cex, xlab='', ylab='sample #'
-     ,cex.lab=cex.lab, col=point_col)
-lines(posterior_thetas_lo, samples, lwd=lwd, col=line_col)
+plot(samples, posterior_thetas_lo, ylim=c(0,1), pch=pch, cex=cex, xlab='', xaxt = 'n'
+     ,ylab = expression(theta), cex.lab=cex.lab, col=point_col)
+lines(samples, posterior_thetas_lo, lwd=lwd, col=line_col)
+abline(h = c(0.9, (20+13)/(40+41)), col = c('red', 'green'), cex = cex/2)
 title(expression(paste('(1) ', sigma, ' = 0.005')), cex.main=cex.main)
 
-par(mar=c(4,0,3,1)+0.1)
-plot(posterior_thetas_or, samples, xlim=c(0,1), pch=pch, cex=cex, xlab=expression(theta), ylab = ''
-     ,yaxt = 'n', cex.lab=cex.lab, col=point_col)
-lines(posterior_thetas_or, samples, lwd=lwd, col=line_col)
+#par(mar=c(4,0,3,1)+0.1)
+plot(samples, posterior_thetas_or, ylim=c(0,1), pch=pch, cex=cex, xlab = '', xaxt = 'n'
+     ,ylab=expression(theta), cex.lab=cex.lab, col=point_col)
+lines(samples, posterior_thetas_or, lwd=lwd, col=line_col)
+abline(h = c(0.9, (20+13)/(40+41)), col = c('red', 'green'), cex = cex/2)
 title(expression(paste('(2) ', sigma, ' = 0.05')), cex.main=cex.main)
 
-plot(posterior_thetas_hi, samples, xlim=c(0,1), pch=pch, cex=cex, xlab='', ylab = '', yaxt = 'n'
-     ,col=point_col)
-lines(posterior_thetas_hi, samples, lwd=lwd, col=line_col)
-title(expression(paste('(3) ', sigma, ' = 0.5')), cex.main=cex.main)
+par(mar=c(3,3,1.5,1)+0.1)
+plot(samples, posterior_thetas_hi,  ylim=c(0,1), pch=pch, cex=cex, xlab='sample #'
+     ,ylab = expression(theta), cex.lab = cex.lab, col=point_col)
+lines(samples, posterior_thetas_hi, lwd=lwd, col=line_col)
+abline(h = c(0.9, (20+13)/(40+41)), col = c('red', 'green'), cex = cex/2)
+title(expression(paste('(3) ', sigma, ' = 0.5')), cex.main=cex.main, line = line)
 ```
 
 Figure 4 above reveals that the random walk with  $\sigma = 0.005$ has barely moved away from our seed for $\p$ of 0.9 after 100 samples while the random walk with $\sigma = 0.5$ wastes a lot of samples. This waste occurs because when $\p$ moves into the region of high posterior density after several samples, the dispersed proposal distribution makes it likely to draw a $\pp$ far away from the current position which will often be rejected. It's important to recognize that with enough time and patience all three of these scenarios would converge to the same posterior distribution. It's just that some proposal distributions will be more efficient than others in sampling from the posterior.
 
-#### Metropolis Algorithm in 2-D
+# Metropolis Algorithm in 2-D
 Now that we have programmed and summarized the posterior distribution from the Metropolis algorithm from scratch in a single parameter dimension, it naturally begs the question of how we generalize to two or more dimensions. We will extend our coin-flip example by introducing another coin. In doing so we will need a joint prior distribution for the fairness factor of both coins. The joint prior distribution will be of the form $p(\p_1, \p_2)$ where $\p_1$ is the fairness factor for the first coin and $\p_2$ is the fairness factor for the second coin. To simplify matters, we will assume our prior beliefs about these coins are independent. What this implies is any prior belief for $\p_1$ is not affected by any prior belief for $\p_2$ and vice versa. Mathematically: 
 
 $$p(\p_i|\p_j) = p(\p_i)\ for\ i,j = 1,2\ and\ p(\p_1, \p_2) = p(\p_1)p(\p_2)$$ 
@@ -441,7 +448,7 @@ Now let's plot our `posterior_thetas_2d` matrix:
 
 opar <- par()
 cex <- 1.0 #size of points on plot
-cex.main <- 1.3 #size of title
+cex.main <- 1.1 #size of title
 cex.lab <- 1.1 #size of labels
 cex.axis <- 1.0 #size of axis values
 pch <- 20 #point type
@@ -507,7 +514,7 @@ The approximated quantiles from our sampled chains appear fairly consistent with
 
 It's important to return to our proposal distribution once again. Recall that in the two-dimensional space the proposal distribution was bivariate normal with zero covariance between the two parameters. It doesn't have to be this way. If the covariances were anything other than zero, some proposals would be more likely to be made in some diagonal direction than another direction. Doing so might lead to a more efficient sampling strategy, although not in this case since we know the posterior distributions of our fairness factors are independent. Or the proposal distribution could be non-normal. A non-normal proposal distribution that is also non-symmetric (i.e. $p(accept \pp|\pc) \neq p(accept\ \pc|\pp)$) would be an implementation of the generalization of the Metropolis algorithm known as the *Metropolis-Hastings algorithm*. Configuring the details of our proposal distribution so as to optimize efficiency and accuracy of the proposal sampling is called *tuning*. In more complex settings tuning the proposal distribution is not just a convenience but a requirement to achieve meaningful results. Because of this, we look to other MCMC algorithms to improve efficiency without requiring us to fiddle with too many tuning "knobs" of the algorithm. 
 
-#### Gibbs Algorithm                                                                                      
+# Gibbs Algorithm                                                                                      
 Due to sampling inefficiency and the need to tune the proposal distribution of the Metropolis algorithm, we explore other popular MCMC sampling strategies. Recall that the core problem is that we don't always know the analytical form of the joint posterior distribution of the parameters (except in simple cases like we walked through above) and, even if we did know it, our computers might not be programmed to easily draw samples from it. The **Gibbs** algorithm is another such MCMC sampler which allows us to circumvent this problem. As we will see, Gibbs is an efficient algorithm that does not require tuning, but it also has some limitations.
 
 Like the Metropolis algorithm, the Gibbs algorithm can be conceptualized as a random walk through the parameter space where we start the walk at an arbitrary point and where the next step only depends on the current position (this is the Markov property of the MCMC). What makes the Gibbs algorithm distinct from the Metropolis algorithm is how each step is taken. At each point in the walk, one component parameter is selected from the n-dimensional parameter space we're walking through. The component parameters are selected in turn creating an ordered cycle, $\p_1, \p_2,...,\p_n$. When a component parameter is selected, say $\p_i$, we choose a new value for that parameter by drawing it from the *conditional* posterior distribution of that parameter given the values of the other parameters and the data, $p(\p_i|\p_{j \neq i}, Data)$. The selected value for $\p_i$, combined with the unchanged values of $\p_{j \neq i}$ is the new position in the random walk. The conditional sampling process then continues through all the parameters $\p_1, \p_2,...,\p_n$ to form a complete cycle and then the cycle is repeated.
@@ -516,10 +523,10 @@ Samples from the conditional posterior distribution across all parameters come t
 
 It is trivial to derive the fact that in our two-coin example above the conditional posterior probability distribution for $\p_1$ and $\p_2$ are both distributed $\beta(a+heads_i, b+flips_i - heads_i)\ i=1,2$, and since they are independent, the joint posterior distribution is the product of the two conditional posterior distributions. Unlike the Metropolis algorithm where the parameters are sampled simultaneously, the parameters in the Gibbs algorithm are sampled consecutively, and so a scatterplot of the samples will look different than that of the Metropolis algorithm. Figure 7 below shows such a scatterplot for both the Gibbs and Metropolis algorithms with 500 random samples. Notice that each step of the random walk for the Gibbs algorithm is parallel to either the $\p_1$ or $\p_2$ axis as seen by the thin lines that connect the samples. This occurs because the sampled parameters are drawn one at time holding the other one constant. In contrast, the parameters update simultaneously in the Metropolis algorithm as evinced by the diagonal lines connecting successive samples.
 
-```{r fig7, echo=F, fig.width = 8, fig.cap = 'Scatterplot of samples comparing Metropolis and Gibbs algorithms. Inspired by Figure 7.6 in Kruschke, J.K. (2015). \\textit{Doing Bayesian Data Analysis in R: A Tutorial with R, JAGS, and Stan}. 2nd Edition. Academic Press/Elsiver.'}
+```{r fig7, echo=F, fig.height = 4.5, fig.width = 7, fig.cap = 'Scatterplot of samples comparing Metropolis and Gibbs algorithms. Inspired by Figure 7.6 in Kruschke, J.K. (2015). \\textit{Doing Bayesian Data Analysis in R: A Tutorial with R, JAGS, and Stan}. 2nd Edition. Academic Press/Elsiver.'}
 opar <- par()
 cex <- 1.0 #size of points on plot
-cex.main <- 1.3 #size of title
+cex.main <- 1.1 #size of title
 cex.lab <- 1.1 #size of labels
 cex.axis <- 0.8 #size of axis values
 pch <- 20 #point type
@@ -572,7 +579,7 @@ The Gibbs algorithm is useful for when we can't compute or sample from the joint
 
 Another disadvantage of the Gibbs algorithm is in the case of correlated parameters (such as a slope and intercept parameter in a simple linear regression). Imagine two highly correlated parameters such that their joint posterior lies in a narrow tunnel of density that sits at a 45? angle from the origin. In the Gibbs algorithm, each step in our walk lies parallel to one of the two axes as we saw above, and so we can envision that when it looks to take a step it cannot go very far in the direction of high density since it is constrained to stay in the tunnel and will quickly bump into the boundaries of the tunnel when it moves in either direction. This will cause the algorithm to stall and explore the posterior very slowly if at all. Thus the advantages of the Gibbs algorithm - efficiency in sampling from the posterior and no tuning of the proposal distribution - can be offset by a couple major disadvantages - namely the ability to compute and sample from conditional posterior distributions and sampling efficiency in models with correlated parameters.
 
-#### Hamiltonian Monte Carlo
+# Hamiltonian Monte Carlo
 Similar to the Gibbs algorithm, the Hamiltonian Monte Carlo algorithm (HMC) employs a proposal distribution that changes depending on the current position in parameter space, but unlike the Gibbs algorithm, HMC does not rely on being able to compute and sample from conditional posterior distributions of the parameters. Instead HMC solves for the direction in which the posterior density increases - called the *gradient* - and molds the proposal distribution in that direction. Recall that for the Metropolis algorithm the proposal distribution's shape is the exact same no matter where it finds itself in the parameter space. This is what leads to a lot of wasted samples and inefficiency. 
 
 How does HMC adapt its proposal distribution depending on the parameter's current position? HMC takes inspiration from the physics of energy and first computes the unnormalized negative log posterior density called the *potential function* (also sometimes referred to as the *potential energy*). It then generates a proposal in a fashion not too unlike flicking a marble that rests on the surface of the frictionless potential function at the location of the last accepted proposed parameter, which we've been calling $\pc$. The marble then rolls along the surface of the potential function for a period of time and wherever it ends up at the end of the period is the proposed parameter, $\pp$. That whole process - conceptualized as flicking a marble in a random direction with a random initial momentum and letting it roll around for a defined period of time and then recording the position of the parameter as $\pp$ - is how HMC arrives at new proposals. That doesn't seem like it would produce a *distribution*, does it? Notice we said that the flick happens in a *random* direction with a *random* initial momentum. If this flicking process were repeated many times from the same starting location, the randomness would lead to many different trajectories for the marble to take as it rolls around on the surface of the potential function and thus many different terminal locations for the marble. It is these different terminal locations that can be conceptualized as the HMC proposal distribution for the current position.
@@ -992,7 +999,7 @@ points(theta2, 0, pch = pch, col = point_col, cex = 3)
 
 We may wonder why we would bother with HMC if it requires just as much tuning as the Metropolis algorithm and isn't as efficient as the Gibbs algorithm. As mentioned above, modern implementations of HMC are sophisticated enough such that HMC achieves a high degree of sampling efficiency and works well for a variety of situations that might be intractable for the Metropolis algorithm (e.g. parameter-heavy hierarchical models) and the Gibbs algorithm (e.g. highly correlated parameters). We can imagine fairly easily that HMC would be quite useful for posterior distributions that curve through the parameter space making something like an S-shape. It is not a guarantee that HMC will always be more efficient than other MCMC algorithms, but it's a good default choice if other MCMC sampling algorithms are struggling with a particular model.
 
-#### MCMC Diagnostics
+#MCMC Diagnostics
 As stated earlier, the goal of MCMC is to gather a representation of the true but incalculable posterior distribution via simulation. But simulations and the code we use to program them can go awry. Even if the simulation is executed flawlessly, we may not have given the simulation program reasonable defaults or let it run long enough to achieve good representation. Therefore, it would behoove us to utilize a set of diagnostics that indicate if the simulation process is behaving as expected. The diagnostics hopefully give us confidence that our samples are converging to a reasonable representation the target posterior. There are several methods which are necessary but not sufficient to ensure representativeness. We will explore some of them in turn below.
 
 **Trace plots** -  Trace plots involve simulating two or more chains of parameter values and plotting the values of each chain against the sample number of the sampling process, typically on the same set of axes. If the chains are all representative of the posterior distribution, they should overlap each other and be unrelated to their randomly set starting positions. They should also be stationary around the same modal value. We can create trace plots fairly easily with our one-dimensional `metropolis_algorithm` function used to sample $\p$. We will run three different chains with 10,000 samples each, and we will start with a diffuse set of `theta_seed`'s to ensure that the chains mix well despite their initial dispersion. 
@@ -1252,11 +1259,11 @@ for (n in terminal_n){
 
 We then visualize our `Rhats` vector to check that the chains are mixing well. We are hopeful that they are mixing about the true posterior distribution, but this diagnostic cannot guarantee that this is the case. It can only comment on whether the chains are mixing well. We would be concerned if as `n` increased the statistic was not approaching 1.0 and we would want to draw more samples if the statistic was generally moving towards 1.0 but was meaningfully above 1.0.
 
-```{r fig14, echo=F, fig.cap = 'Gelman-Rubin Convergence Diagnostic as the sample size increases'}
+```{r fig14, fig.height = 4.5, echo=F, fig.cap = 'Gelman-Rubin Convergence Diagnostic as the sample size increases'}
 opar <- par()
 cex <- 1.3
-cex.main <- 1.2 #size of title
-cex.lab <- 1.2 #size of labels
+cex.main <- 1.1 #size of title
+cex.lab <- 1 #size of labels
 cex.axis <- 0.7 #size of axis values
 pch <- 20
 point_col <- 'dodgerblue1'
@@ -1315,5 +1322,5 @@ Depending on the seed values employed, we get acceptance rates around `r round(m
 
 There is various guidance floating around in the Bayesian literature about what is an optimal acceptance rate for a particular MCMC algorithm. We'll not discuss those here as it depends on many things including but not limited to the type and implementation of the algorithm, number of dimensions in the parameter space, the degree of correlation in the parameter values, the aim of the study, etc.
 
-#### Conclusion
+# Conclusion
 By now we should have an understanding of why MCMC algorithms are needed to estimate the posterior distributions for parameters of interest and we should be comfortable with a couple popular ways to do so - Metropolis, Gibbs, and HMC. We should be familiar with these MCMC implementations including their basic machinery as well as their strengths and weaknesses. To help reinforce the simplest of these algorithms, the Metropolis algorithm, we have provided a basic implementation with the `R` software. We have also used the output of our Metropolis sampler to explore a handful of diagnostics which are useful in any Bayesian analysis to check samples for convergence, stationarity, healthy mixing across multiple chains, and efficiency with the ultimate goal of ensuring a suitable representation of the posterior distribution. We admire these powerful but simple algorithms which allow us to do something that would otherwise often be impossible, but we treat them with a healthy dose of skepticism too as they are just simple golems^[A reference to the golems in chapter 1 of *Statistical Rethinking*] that only follow the instructions we give them. 
