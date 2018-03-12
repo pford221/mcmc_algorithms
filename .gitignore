@@ -3,5 +3,6 @@
 .RData
 .Ruserdata
 mcmc_algorithms.pdf
+mcm_algorithms_v0.3.pdf
 *.Rproj
 preamble.tex

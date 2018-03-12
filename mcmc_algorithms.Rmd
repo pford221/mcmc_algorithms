@@ -1,8 +1,7 @@
 ---
 title: "MCMC Algorithms"
 author: "Patrick Ford, FCAS CSPA"
-#date: '`r format(Sys.Date(), "%B %Y")`'
-date: "February 2018"
+date: '`r format(Sys.Date(), "%B %Y")`'
 output:
   pdf_document:
     fig_caption: yes
@@ -35,7 +34,7 @@ Applying Bayesian models became practical with the development of Markov Chain M
 * Gibbs
 * Hamiltonian
 
-The study note aims to provide simplified algorithm implementations that illustrate what happens in the background when one of them is invoked. In doing so, the study note intends to illuminate the algorithmic machinery in hopes of providing a level of insight that could not be attained by studying theory alone. In fact, we eschew almost all of the theory in favor of application in this study note. We employ `R` software as a medium to explore the algorithms and diagnostics common to MCMC implementations. All of the programs can be executed with base `R` functionality which means that there is no set-up overhead required to run the code blocks other than a working version of `R`. `R` is freely available online for all common operating systems. 
+The study note aims to provide simplified algorithm implementations that illustrate what happens in the background when one of them is invoked. In doing so, the study note intends to illuminate the algorithmic machinery in hopes of providing a level of insight that could not be attained by studying theory alone. In fact, we eschew almost all of the theory in favor of application in this study note. We employ `R` software as a medium to explore the algorithms and diagnostics common to MCMC implementations. Nearly all of the programs can be executed with base `R` functionality which means that there is no set-up overhead required to run the code blocks other than a working version of `R`. `R` is freely available online for all common operating systems. 
 
 This study note supplements the syllabus readings found in the book *Statistical Rethinking*^[McElreath, R., *Statistical Rethinking: A Bayesian Course with Examples in R and Stan*, CRC Press, 2016] by Richard McElreath. However, this study note can be read and understood even if the reader is not familiar with *Statistical Rethinking*. It is only in the next two sections where we highlight the shortcomings of alternatives to MCMC and extend the example of King Markov that the connection to the book is made explicit.
 
@@ -110,8 +109,9 @@ Then we create a function called `metropolis_algorithm` that takes three argumen
 metropolis_algorithm <- function(samples, theta_seed, sd){
   
   theta_curr <- theta_seed
-  posterior_thetas <- rep(NA, samples) # Create vector to store sampled parameters
-  
+   # Create vector of NAs to store sampled parameters
+  posterior_thetas <- rep(NA, times = samples)
+
   for (i in 1:samples){
     
     theta_prop <- rnorm(n = 1, mean = theta_curr, sd = sd) # Proposal distribution
@@ -121,8 +121,10 @@ metropolis_algorithm <- function(samples, theta_seed, sd){
     theta_prop <- ifelse((theta_prop < 0 | theta_prop > 1), theta_curr, theta_prop)
     
     # Bayes' numerators
-    posterior_prop <- dbeta(theta_prop, a, b) * dbinom(heads, flips, theta_prop)
-    posterior_curr <- dbeta(theta_curr, a, b) * dbinom(heads, flips, theta_curr)
+    posterior_prop <- dbeta(theta_prop, shape1 = a, shape2 = b) * 
+                      dbinom(heads, size = flips, prob = theta_prop)
+    posterior_curr <- dbeta(theta_curr, shape1 = a, shape2 = b) * 
+                      dbinom(heads, size = flips, prob = theta_curr)
       
     # Calculate probability of accepting
     p_accept_theta_prop <- min(posterior_prop/posterior_curr, 1.0)
@@ -209,9 +211,9 @@ min <- 0.1; max <- 0.9
 thetas <- seq(from = min, to = max, length.out = 1000)
 
 # Pass the sequence of thetas to calculate the likelihood, prior, and  posterior
-likelihood <- dbinom(heads, flips, thetas)
-prior <- dbeta(thetas, a, b)
-posterior <- dbeta(thetas, (a + heads), (b + flips - heads))
+likelihood <- dbinom(heads, size = flips, prob = thetas)
+prior <- dbeta(thetas, shape1 = a, shape2 = b)
+posterior <- dbeta(thetas, shape1 = (a + heads), shape2 = (b + flips - heads))
 ```
 
 Graphing these densities consecutively yields the following facet plot:
@@ -330,14 +332,14 @@ a <- 10; b <- 10
 
 thetas <- seq(from = 0, to = 1.0, length.out = 50)
 
-prior_1 <- dbeta(thetas, a, b)
-prior_2 <- dbeta(thetas, a, b)
+prior_1 <- dbeta(thetas, shape1 = a, shape2 = b)
+prior_2 <- dbeta(thetas, shape1 = a, shape2 = b)
 
-likelihood_1 <- dbinom(heads_1, flips_1, thetas)
-likelihood_2 <- dbinom(heads_2, flips_2, thetas)
+likelihood_1 <- dbinom(heads_1, size = flips_1, prob = thetas)
+likelihood_2 <- dbinom(heads_2, size = flips_2, prob = thetas)
 
-posterior_1 <- dbeta(thetas, (a + heads_1), (b + flips_1 - heads_1))
-posterior_2 <- dbeta(thetas, (a + heads_2), (b + flips_2 - heads_2))
+posterior_1 <- dbeta(thetas, shape1 = (a + heads_1), shape2 = (b + flips_1 - heads_1))
+posterior_2 <- dbeta(thetas, shape1 = (a + heads_2), shape2 = (b + flips_2 - heads_2))
 
 # Matrix of densities. Multiply (*) because of independence.
 joint_prior <- outer(prior_1, prior_2, FUN='*' )
@@ -404,13 +406,15 @@ metropolis_algorithm_2d <- function(samples, thetas_seed, cov_mat){# 2D metropol
     
     # If any of the values in thetas_prop is not in [0, 1.0] then replace their value with
     # the same element in thetas_curr, otherwise keep their values
-    thetas_prop <- mapply(function(x, y) ifelse((x > 1 | x < 0), y, x),
+    thetas_prop <- mapply(FUN = function(x, y) ifelse((x > 1 | x < 0), y, x),
                           x = thetas_prop, 
                           y = thetas_curr)
     
     # Calculate Bayes' numerators
-    posterior_prop <- dbeta(thetas_prop, a, b) * dbinom(heads, flips, thetas_prop)
-    posterior_curr <- dbeta(thetas_curr, a, b) * dbinom(heads, flips, thetas_curr)
+    posterior_prop <- dbeta(thetas_prop, shape1 = a, shape2 = b) *
+                      dbinom(heads, size = flips, prob = thetas_prop)
+    posterior_curr <- dbeta(thetas_curr, shape1 = a, shape2 = b) * 
+                      dbinom(heads, size = flips, prob = thetas_curr)
     
     # Accept/reject logic
     p_accept_theta_prop = pmin(posterior_prop/posterior_curr, 1.0)
@@ -420,7 +424,7 @@ metropolis_algorithm_2d <- function(samples, thetas_seed, cov_mat){# 2D metropol
     
     # If probability of accept is greater than the random uniform then accept 
     # thetas_prop otherwise return thetas_curr
-    thetas_select <- mapply(function(x, y, w, z) ifelse(x > y, w, z),
+    thetas_select <- mapply(FUN = function(x, y, w, z) ifelse(x > y, w, z),
                             x = p_accept_theta_prop,
                             y = rand_unif,
                             w = thetas_prop,
@@ -479,17 +483,17 @@ To convince ourselves that the Metropolis algorithm yields a chain of samples th
 
 ```{r 2D_posterior_check}
 set.seed(481) # For reproducibility
-warmup<- seq(5000) # 1,2,...,5000
+warmup <- seq(from = 1, to = 5000) # 1,2,...,5000
 posterior_thetas_2d_post_warmup <- posterior_thetas_2d[-warmup, ] # Remove warmup period
 
 n <- nrow(posterior_thetas_2d_post_warmup) # Number of samples to draw from the exact
                                            # marginal posterior distributions. We set this
                                            # equal to the number of samples post warmup
 
-exact_theta_1 <- rbeta(n, (a + heads_1), (b + flips_1 - heads_1)) # Random sample from the
-                                                                  # first marginal
-exact_theta_2 <- rbeta(n, (a + heads_2), (b + flips_2 - heads_2)) # Random sample from the
-                                                                  # second marginal
+# Random sample from the first marginal
+exact_theta_1 <- rbeta(n = n, shape1 = (a + heads_1), shape2 = (b + flips_1 - heads_1))
+# Random sample from the first marginal
+exact_theta_2 <- rbeta(n = n, shape1 = (a + heads_2), shape2 = (b + flips_2 - heads_2))
 
 apprx_theta_1 <- posterior_thetas_2d_post_warmup[ ,1]
 apprx_theta_2 <- posterior_thetas_2d_post_warmup[ ,2]
@@ -1000,7 +1004,7 @@ points(theta2, 0, pch = pch, col = point_col, cex = 3)
 We may wonder why we would bother with HMC if it requires just as much tuning as the Metropolis algorithm and isn't as efficient as the Gibbs algorithm. As mentioned above, modern implementations of HMC are sophisticated enough such that HMC achieves a high degree of sampling efficiency and works well for a variety of situations that might be intractable for the Metropolis algorithm (e.g. parameter-heavy hierarchical models) and the Gibbs algorithm (e.g. highly correlated parameters). We can imagine fairly easily that HMC would be quite useful for posterior distributions that curve through the parameter space making something like an S-shape. It is not a guarantee that HMC will always be more efficient than other MCMC algorithms, but it's a good default choice if other MCMC sampling algorithms are struggling with a particular model.
 
 #MCMC Diagnostics
-As stated earlier, the goal of MCMC is to gather a representation of the true but incalculable posterior distribution via simulation. But simulations and the code we use to program them can go awry. Even if the simulation is executed flawlessly, we may not have given the simulation program reasonable defaults or let it run long enough to achieve good representation. Therefore, it would behoove us to utilize a set of diagnostics that indicate if the simulation process is behaving as expected. The diagnostics hopefully give us confidence that our samples are converging to a reasonable representation the target posterior. There are several methods which are necessary but not sufficient to ensure representativeness. We will explore some of them in turn below.
+As stated earlier, the goal of MCMC is to gather a representation of the true but incalculable posterior distribution via simulation. But simulations and the code we use to program them can go awry. Even if the simulation is executed flawlessly, we may not have given the simulation program reasonable defaults or let it run long enough to achieve good representation. Therefore, it would behoove us to utilize a set of diagnostics that indicate if the simulation process is behaving as expected. The diagnostics hopefully give us confidence that our samples are converging to a reasonable representation of the target posterior. There are several methods which are necessary but not sufficient to ensure representativeness. We will explore some of them in turn below.
 
 **Trace plots** -  Trace plots involve simulating two or more chains of parameter values and plotting the values of each chain against the sample number of the sampling process, typically on the same set of axes. If the chains are all representative of the posterior distribution, they should overlap each other and be unrelated to their randomly set starting positions. They should also be stationary around the same modal value. We can create trace plots fairly easily with our one-dimensional `metropolis_algorithm` function used to sample $\p$. We will run three different chains with 10,000 samples each, and we will start with a diffuse set of `theta_seed`'s to ensure that the chains mix well despite their initial dispersion. 
 
@@ -1015,7 +1019,7 @@ flips <- 41; heads <- 13 # data
 a <- 10; b <- 10 # prior beta distribution parameters
 
 set.seed(124)
-chains <- mapply(metropolis_algorithm, samples = samples, theta_seed = theta_seeds
+chains <- mapply(FUN = metropolis_algorithm, samples = samples, theta_seed = theta_seeds
                  ,sd = sd)
 ```
 
@@ -1082,14 +1086,14 @@ If any of the chains appeared to be isolated from the others then we would be ne
 **Autocorrelation Plots** - We know our within-chain samples are correlated since not all the $\pp$'s are accepted, and even if they are accepted, their value is a function of the last parameter value because $\pc$ is the mean of the proposal distribution in the Metropolis algorithm. Even in HMC where the proposal distribution molds itself to the posterior distribution, the current parameter value will influence the proposal distribution for the next parameter. To get a sense of how correlated the proposed parameters are through the sampling iterations, we can plot the *autocorrelation* of our chains. This diagnostic won't necessarily give us an indication of if the chain is representative of the posterior distribution, but it will give us a sense of the efficiency of our MCMC algorithm. It will also be useful to check to see if all of our chains are behaving similarly. If any chain's autocorrelation plot is significantly different than the others this is a hint that something has gone wrong. The correlogram computed via the `acf` function in `R` provides this diagnostic. Let's run it on our three chains and store the results.
 
 ```{r autocorr, autocorrelation}
-warmup <- seq(100) # Conservatively set the warmup period. We discard these samples from
-                    # our correlogram
+# Conservatively set the warmup period. We discard these samples from our correlogram
+warmup <- seq(from = 1, to = 100)
 
 # Remove warmup samples
 chains_post_warmup <- chains[-warmup, ]
 
 # Apply the acf() across each column (margin 2) of the chains_post_warmup matrix
-acfs <- apply(chains_post_warmup, MARGIN = 2, FUN = acf, plot=FALSE)
+acfs <- apply(chains_post_warmup, MARGIN = 2, FUN = acf, plot = FALSE)
 ```
 
 Plotting the correlograms in Figure 13 below, we observe that all three chains' autocorrelation is quite similar at each lag and the autocorrelation drops off fairly precipitously by lag 10. If our proposal distribution had a much smaller standard deviation, then the within-chain samples would be more highly correlated at all lags.
@@ -1134,9 +1138,8 @@ where $\rho_k$ is the autocorrelation at lag $k$. Notice that the sum goes from 
 chain1_post_warmup <- chains_post_warmup[, 1]
 n <- length(chain1_post_warmup)
 
-acf_1 <- acf(chain1_post_warmup, plot=FALSE, lag.max = 1000)[[1]] # Grab the
-                                                                  # autocorrelations at
-                                                                  # each lag
+# Grab the autocorrelations at each lag
+acf_1 <- acf(chain1_post_warmup, plot = FALSE, lag.max = 1000)[[1]]
 
 # Loop through each consecutive sum of autocorrelations while the sums are non-negative. 
 # The resulting t is our terminal point
@@ -1149,7 +1152,7 @@ while (acf_sums >= 0){
 
 # Compute the denominator. The sum of the acf_1 vector is from the 2nd element to element 
 # t because the second element is the first lag, k = 1
-denominator <- 1 + 2*sum(acf_1[2:t]) 
+denominator <- 1 + 2 * sum(acf_1[2:t]) 
 
 # Compute an approximation of the effective number of samples, n_eff
 n_eff <- n / denominator
@@ -1160,14 +1163,14 @@ Most implementations of MCMC algorithms allow for *thinning* the sampled chains.
 ```{r thinning}
 h = 5 # Thin our chain by keeping only 1 out of every 5 samples
 n <- length(chain1_post_warmup)
-keep_seq <- seq(1, n, h) # Sequence of integers that represent the indices of the chain
-                         # we will keep
+keep_seq <- seq(from = 1, to = n, by = h) # Sequence of integers that represent the 
+                                          # indices of the chain we will keep
 chain1_post_warmup_thin <- chain1_post_warmup[keep_seq]
 
 thin_n <- length(chain1_post_warmup_thin)
 
 # Extract autocorrelations at each lag
-acf_1_thin <- acf(chain1_post_warmup_thin, plot=FALSE, lag.max = thin_n/5)[[1]]
+acf_1_thin <- acf(chain1_post_warmup_thin, plot = FALSE, lag.max = thin_n / h)[[1]]
 
 acf_sums <- 999
 t <- 1
@@ -1202,7 +1205,7 @@ A tricky part of our implementation below in that we need to split the chains in
 # Helper function to split the chains in half
 split_chain <- function(x){
   len <- length(x)
-  split_x <- split(x, seq_along(x) <= len/2)
+  split_x <- split(x, f = seq_along(x) <= len/2)
   return(split_x)
 }
 
@@ -1213,11 +1216,11 @@ compute_Rhat <- function(chains){# Function to compute Gelman-Rubin Diagnostic
 
   n <- length(chains_split[[1]]) # Get number of samples in a split chain
   
-  Ws <- sapply(chains_split, var) # Compute the variance of each chain. These are the 
-                                  # components of W
+  Ws <- sapply(chains_split, FUN = var) # Compute the variance of each chain. These are 
+                                        # the components of W
   W <- mean(Ws) # Take the mean of the components of W. This is W
   
-  chain_means <- sapply(chains_split, mean) # Compute the mean of each chain
+  chain_means <- sapply(chains_split, FUN = mean) # Compute the mean of each chain
   
   B <- var(chain_means) # Compute the variance of the chain means to get B
   
@@ -1244,7 +1247,7 @@ truncate_chain <- function(chain, n){
   return(new_chain)
 }
 
-Rhats <- rep(0, length(terminal_n)) # Create vector of 0's to store results 
+Rhats <- rep(0, times = length(terminal_n)) # Create vector of 0's to store results 
 
 # Loop through each terminal_n by truncating the chains at the value of n and then calling
 # the compute_Rhat function. Store the results in the Rhats vector that we initialized 
@@ -1303,10 +1306,9 @@ compute_accRate_intuitive <- function(chain){
 # Opaque way. Employs R's unique() function which keeps only unique elements in a vector
 compute_accRate_opaque <- function(chain){
   n <- length(chain)
-  acceptance_rate = (length(unique(chain)) - 1) / (n - 1) # Subtract 1 from numerator
-                                                          # because the first theta will
-                                                          # always get counted as a unique
-                                                          # value
+  # Subtract 1 from numerator because the first theta will always get counted as a unique
+  # value
+  acceptance_rate = (length(unique(chain)) - 1) / (n - 1)
   return (acceptance_rate)
 }
 
